@@ -5,18 +5,28 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/qedus/osmpbf"
 )
 
-type Accommodation struct {
-	ID   int64
-	Name string
+type Place struct {
+	ID          int64
+	Name        string
+	Street      string
+	ZipCode     int
+	HouseNumber string
+	City        string
 }
 
-func parsePBF(file string) ([]Accommodation, error) {
-	places := []Accommodation{}
+func (p Place) GetAddressText() string {
+	return fmt.Sprintf("%s %s, %d %s", p.HouseNumber, p.Street, p.ZipCode, p.City)
+}
+
+func parsePBF(file string) ([]Place, error) {
+	places := []Place{}
 
 	r, err := os.Open(file)
 	if err != nil {
@@ -50,7 +60,10 @@ func parsePBF(file string) ([]Accommodation, error) {
 			}
 
 			if isPlace {
-				if strings.ToLower(tags["tourism"]) == "hotel" || strings.ToLower(tags["tourism"]) == "apartment" || strings.ToLower(tags["building"]) == "hotel" {
+				zipCode, _ := strconv.Atoi(tags["addr:postcode"])
+				if strings.ToLower(tags["amenity"]) == "restaurant" &&
+					strings.Contains(strings.ToLower(tags["cuisine"]), "sushi") &&
+					zipCode > 10001 && zipCode < 10282 {
 					placeName := tags["name"]
 					if placeName == "" {
 						for k, v := range tags {
@@ -62,9 +75,13 @@ func parsePBF(file string) ([]Accommodation, error) {
 					}
 
 					if placeName != "" {
-						places = append(places, Accommodation{
-							ID:   placeId,
-							Name: placeName,
+						places = append(places, Place{
+							ID:          placeId,
+							Name:        placeName,
+							Street:      tags["addr:street"],
+							ZipCode:     zipCode,
+							HouseNumber: tags["addr:housenumber"],
+							City:        tags["addr:city"],
 						})
 					}
 				}
@@ -76,7 +93,7 @@ func parsePBF(file string) ([]Accommodation, error) {
 }
 
 func main() {
-	pbfFile := "osm/islas-baleares-latest.osm.pbf"
+	pbfFile := "osm/new-york-latest.osm.pbf"
 	places, err := parsePBF(pbfFile)
 	if err != nil {
 		log.Fatal(err)
@@ -87,9 +104,12 @@ func main() {
 		return places[i].Name < places[j].Name
 	})
 
+	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
+	fmt.Fprintln(w, "OSM ID\t\tName\t\tAddress")
 	for _, place := range places {
-		fmt.Printf("%d\t%s\n", place.ID, place.Name)
+		fmt.Fprintln(w, strconv.Itoa(int(place.ID))+"\t\t"+place.Name+"\t\t"+place.GetAddressText())
 	}
+	w.Flush()
 
 	fmt.Printf("Total places: %d\n", len(places))
 }
